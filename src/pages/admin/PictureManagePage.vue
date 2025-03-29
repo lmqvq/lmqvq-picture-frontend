@@ -5,9 +5,72 @@
       <a-space>
         <a-button type="primary" href="/add_picture" target="_blank">+ 创建图片</a-button>
         <a-button type="primary" href="/add_picture/batch" target="_blank" ghost>+ 批量创建图片</a-button>
+        <!-- 批量编辑按钮 -->
+        <a-button
+            type="primary"
+            :disabled="!selectedRowKeys.length"
+            @click="showBatchModal"
+            ghost
+        >
+          <template #icon><EditOutlined /></template>
+          批量编辑
+        </a-button>
       </a-space>
     </a-flex>
     <div style="margin-bottom: 16px" />
+    <!-- 批量编辑弹窗 -->
+    <template>
+      <a-modal
+          v-model:visible="batchVisible"
+          title="批量编辑图片"
+          ok-text="提交"
+          cancel-text="取消"
+          @ok="handleBatchEdit"
+          @cancel="resetBatchForm"
+      >
+        <a-form layout="vertical">
+          <a-form-item label="分类">
+            <a-auto-complete
+                v-model:value="batchForm.category"
+                placeholder="请选择或输入分类"
+                :options="categoryOptions"
+                allow-clear
+            />
+          </a-form-item>
+
+          <a-form-item label="标签">
+            <a-select
+                v-model:value="batchForm.tags"
+                mode="tags"
+                placeholder="请选择标签"
+                :options="tagOptions"
+                :token-separators="[',']"
+                allow-clear
+            />
+          </a-form-item>
+
+          <a-form-item label="命名规则">
+            <a-input
+                v-model:value="batchForm.nameRule"
+                placeholder="支持变量：{index} 序号，{timestamp} 时间戳"
+            />
+          </a-form-item>
+
+          <a-form-item label="已选图片（共 {{ selectedRowKeys.length }} 张）">
+            <div class="selected-ids">
+              <a-tag
+                  v-for="id in selectedRowKeys"
+                  :key="id"
+                  closable
+                  @close="removeSelectedId(id)"
+              >
+                {{ id }}
+              </a-tag>
+            </div>
+          </a-form-item>
+        </a-form>
+      </a-modal>
+    </template>
     <!-- 搜索表单 -->
     <a-form layout="inline" :model="searchParams" @finish="doSearch">
       <a-form-item label="关键词">
@@ -45,10 +108,12 @@
     <div style="margin-bottom: 16px" />
     <!-- 表格 -->
     <a-table
-      :columns="columns"
-      :data-source="dataList"
-      :pagination="pagination"
-      @change="doTableChange"
+        :columns="columns"
+        :data-source="dataList"
+        :pagination="pagination"
+        :row-selection="rowSelection"
+        @change="doTableChange"
+        rowKey="id"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.dataIndex === 'url'">
@@ -110,11 +175,14 @@
   </div>
 </template>
 <script lang="ts" setup>
+// 新增接口和响应式数据
+import { listPictureTagCategoryUsingGet } from '@/api/pictureController.ts'
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
   deletePictureUsingPost,
   doPictureReviewUsingPost,
   listPictureByPageUsingPost,
+  editPictureByBatchUsingPost
 } from '@/api/pictureController.ts'
 import { message } from 'ant-design-vue'
 import {
@@ -123,7 +191,9 @@ import {
   PIC_REVIEW_STATUS_OPTIONS,
 } from '../../constants/picture.ts'
 import dayjs from 'dayjs'
+import { EditOutlined } from '@ant-design/icons-vue'
 
+// 表格列配置
 const columns = [
   {
     title: 'id',
@@ -182,12 +252,54 @@ const columns = [
 const dataList = ref<API.Picture[]>([])
 const total = ref(0)
 
+const categoryOptions = ref<{ value: string; label: string }[]>([])
+const tagOptions = ref<{ value: string; label: string }[]>([])
+// 获取标签分类选项
+const getTagCategoryOptions = async () => {
+  try {
+    const res = await listPictureTagCategoryUsingGet()
+    if (res.data.code === 0 && res.data.data) {
+      categoryOptions.value = (res.data.data.categoryList ?? []).map(category => ({
+        value: category,
+        label: category
+      }))
+      tagOptions.value = (res.data.data.tagList ?? []).map(tag => ({
+        value: tag,
+        label: tag
+      }))
+    }
+  } catch (e) {
+    message.error('获取预置分类标签失败')
+  }
+}
+// 初始化获取数据
+onMounted(() => {
+  getTagCategoryOptions()
+})
 // 搜索条件
 const searchParams = reactive<API.PictureQueryRequest>({
   current: 1,
   pageSize: 10,
   sortField: 'createTime',
   sortOrder: 'descend',
+})
+
+// 批量编辑相关状态
+const batchVisible = ref(false)
+const selectedRowKeys = ref<string[]>([])
+const batchForm = reactive({
+  category: '',
+  nameRule: '',
+  tags: [] as string[],
+})
+
+// 表格行选择配置
+const rowSelection = reactive({
+  selectedRowKeys: selectedRowKeys,
+  onChange: (keys: string[]) => {
+    selectedRowKeys.value = keys
+  },
+  checkStrictly: false,
 })
 
 // 获取数据
@@ -226,6 +338,56 @@ const doTableChange = (page: any) => {
   fetchData()
 }
 
+// 显示批量编辑弹窗
+const showBatchModal = () => {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请至少选择一张图片')
+    return
+  }
+  batchVisible.value = true
+}
+
+// 处理批量编辑
+const handleBatchEdit = async () => {
+  try {
+    // 构建请求参数
+    const requestData = {
+      category: batchForm.category || undefined, // 空字符串不传
+      nameRule: batchForm.nameRule || undefined,
+      tags: batchForm.tags.length ? batchForm.tags : undefined,
+      pictureIdList: selectedRowKeys.value.map(id => BigInt(id).toString())
+    }
+
+    const res = await editPictureByBatchUsingPost(requestData)
+
+    if (res.data.code === 0) {
+      message.success(`成功批量更新 ${selectedRowKeys.value.length} 张图片`)
+      // 重置状态
+      batchVisible.value = false
+      selectedRowKeys.value = []
+      resetBatchForm()
+      // 刷新数据
+      fetchData()
+    } else {
+      message.error(res.data.message || '批量更新失败')
+    }
+  } catch (e) {
+    message.error('请求失败，请检查网络连接')
+  }
+}
+
+// 移除单个选中的ID
+const removeSelectedId = (id: string) => {
+  selectedRowKeys.value = selectedRowKeys.value.filter(item => item !== id)
+}
+
+// 重置表单
+const resetBatchForm = () => {
+  batchForm.category = ''
+  batchForm.nameRule = ''
+  batchForm.tags = []
+}
+
 // 搜索数据
 const doSearch = () => {
   // 重置页码
@@ -251,7 +413,7 @@ const doDelete = async (id: string) => {
 // 审核图片
 const handleReview = async (record: API.Picture, reviewStatus: number) => {
   const reviewMessage =
-    reviewStatus === PIC_REVIEW_STATUS_ENUM.PASS ? '管理员操作通过' : '管理员操作拒绝'
+      reviewStatus === PIC_REVIEW_STATUS_ENUM.PASS ? '管理员操作通过' : '管理员操作拒绝'
   const res = await doPictureReviewUsingPost({
     id: record.id,
     reviewStatus,
@@ -266,3 +428,28 @@ const handleReview = async (record: API.Picture, reviewStatus: number) => {
   }
 }
 </script>
+
+<style scoped>
+#pictureManagePage {
+  padding: 24px;
+}
+
+.selected-id-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+}
+
+.selected-id-list .ant-tag {
+  margin: 4px;
+  background: #f5f5f5;
+  border: 1px dashed #ddd;
+}
+
+.empty-tip {
+  color: #999;
+  padding: 8px 0;
+}
+</style>
