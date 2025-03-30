@@ -28,6 +28,11 @@
               </a-space>
               <template #overlay>
                 <a-menu>
+                  <!-- 新增编辑信息菜单项 -->
+                  <a-menu-item @click="goToUpdatePage">
+                    <EditOutlined />
+                    修改信息
+                  </a-menu-item>
                   <a-menu-item @click="doLogout">
                     <LogoutOutlined />
                     退出登录
@@ -46,7 +51,7 @@
 </template>
 <script lang="ts" setup>
 import { computed, h, ref } from 'vue'
-import { HomeOutlined, LogoutOutlined } from '@ant-design/icons-vue'
+import {EditOutlined , HomeOutlined, LogoutOutlined} from '@ant-design/icons-vue'
 import { MenuProps, message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
 import { useLoginUserStore } from '@/stores/useLoginUserStore.ts'
@@ -115,7 +120,10 @@ const doMenuClick = ({ key }) => {
     path: key,
   })
 }
-
+// 跳转到修改信息页面
+const goToUpdatePage = () => {
+  router.push('/user/update')
+}
 // 用户注销
 const doLogout = async () => {
   const res = await userLogoutUsingPost()

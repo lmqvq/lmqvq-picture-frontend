@@ -67,6 +67,21 @@ export async function getUserVoByIdUsingGet(
   })
 }
 
+/** listUserByPage POST /api/user/list/page */
+export async function listUserByPageUsingPost(
+  body: API.UserQueryRequest,
+  options?: { [key: string]: any }
+) {
+  return request<API.BaseResponsePageUser_>('/api/user/list/page', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  })
+}
+
 /** listUserVOByPage POST /api/user/list/page/vo */
 export async function listUserVoByPageUsingPost(
   body: API.UserQueryRequest,
@@ -132,5 +147,38 @@ export async function updateUserUsingPost(
     },
     data: body,
     ...(options || {}),
+  })
+}
+
+/** updateMyUser POST /api/user/update/my */
+export async function updateMyUserUsingPost(
+  body: API.UserUpdateMyRequest,
+  options?: { [key: string]: any }
+) {
+  return request<API.BaseResponseBoolean_>('/api/user/update/my', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  })
+}
+
+/** uploadAvatar POST /api/user/uploadAvatar */
+export async function uploadAvatarUsingPost(
+    file: File,
+    options?: { [key: string]: any }
+) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  return request<API.BaseResponseString>('/api/user/uploadAvatar', {
+    method: 'POST',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    ...(options || {})
   })
 }
